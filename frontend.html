@@ -1,0 +1,437 @@
+<!-- templates/frontend.html -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <!-- Metadatos -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MecaVision - Sistema de OCR y Calidad de Imagen</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Estilos personalizados -->
+    <style>
+        /* Estilos para la barra lateral */
+        #sidebar {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 400px;
+            height: 100%;
+            background-color: #343a40;
+            color: white;
+            padding: 20px;
+            overflow-y: auto;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.5);
+        }
+        #main-content {
+            margin-right: 420px; /* Ajustar según el ancho de la barra lateral */
+        }
+        /* Estilo para el video */
+        #videoFeed {
+            width: 100%;
+            height: auto;
+            border: 2px solid #fff;
+            border-radius: 5px;
+            background-color: #000; /* Fondo negro en caso de error */
+        }
+        /* Scrollbar personalizada para la barra lateral */
+        #sidebar::-webkit-scrollbar {
+            width: 8px;
+        }
+        #sidebar::-webkit-scrollbar-thumb {
+            background-color: #555;
+            border-radius: 4px;
+        }
+        /* Spinner para indicadores de procesamiento */
+        .spinner-border {
+            width: 1.5rem;
+            height: 1.5rem;
+            border-width: .2em;
+        }
+        /* Estilo para secciones de resultados */
+        .result-section {
+            margin-bottom: 20px;
+        }
+        .result-section h4 {
+            border-bottom: 1px solid #555;
+            padding-bottom: 5px;
+        }
+        .ocr-results {
+            max-height: 200px;
+            overflow-y: auto;
+            background-color: #495057;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .ocr-results p {
+            margin-bottom: 5px;
+        }
+        /* Mensaje de error en el video */
+        #videoError {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: red;
+            background-color: rgba(0,0,0,0.7);
+            padding: 10px 20px;
+            border-radius: 5px;
+            display: none;
+            z-index: 10;
+        }
+    </style>
+    <!-- jQuery -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+
+    <!-- Bootstrap JS (opcional, para componentes interactivos) -->
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</head>
+<body class="bg-dark text-light">
+    <!-- Barra Lateral -->
+    <div id="sidebar">
+        <div class="result-section">
+            <h4>Resultados UDI</h4>
+            <div id="resultadosUDI" class="alert alert-info">
+                <p>No se han cargado resultados.</p>
+            </div>
+        </div>
+        <div class="result-section">
+            <h4>Resultados de la Cámara</h4>
+            <div id="resultadosCamara" class="alert alert-info">
+                <p>No se han capturado resultados.</p>
+            </div>
+        </div>
+        <div class="result-section">
+            <h4>Comparación de Resultados</h4>
+            <button id="compararResultadosBtn" class="btn btn-info btn-block mb-3">Comparar Datos</button>
+            <div id="comparacionResultados" class="alert alert-info">
+                <p>No hay datos de comparación.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Contenido Principal -->
+    <div id="main-content" class="container mt-5">
+        <h2 class="text-center mb-4">MecaVision - Sistema de OCR y Calidad de Imagen</h2>
+
+        <div class="row">
+            <!-- Sección de Video -->
+            <div class="col-md-8 position-relative">
+                <div class="card bg-secondary text-light mb-3">
+                    <div class="card-header">Video en Tiempo Real</div>
+                    <div class="card-body text-center">
+                        <!-- Utilizar la etiqueta <img> para el flujo de video -->
+                        <img id="videoFeed" src="" alt="Video Stream">
+                        <!-- Mensaje de Error en el Video -->
+                        <div id="videoError">Error al cargar el video. Por favor, verifica la conexión.</div>
+                        <!-- Mensaje de Estado de la Cámara -->
+                        <div id="cameraStatus" class="mt-2">
+                            <span class="badge badge-secondary">Cámara Detenida</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel de Control y Resultados UDI -->
+            <div class="col-md-4">
+                <div class="card bg-secondary text-light mb-3">
+                    <div class="card-header">Controles</div>
+                    <div class="card-body">
+                        <!-- Formulario para Cargar UDI -->
+                        <form id="cargarUdiForm" enctype="multipart/form-data">
+                            <div class="form-group">
+                                <label for="udiFile">Cargar UDI (Imagen)</label>
+                                <input type="file" class="form-control-file" id="udiFile" accept=".png, .jpg, .jpeg" required>
+                            </div>
+                            <button type="submit" class="btn btn-success btn-block">Cargar UDI</button>
+                        </form>
+
+                        <hr class="bg-light">
+
+                        <!-- Formulario para Iniciar Escaneo -->
+                        <form id="iniciarEscaneoForm">
+                            <div class="form-group">
+                                <label for="cameraIp">Dirección IP de la Cámara</label>
+                                <input type="text" class="form-control" id="cameraIp" name="camera_ip" placeholder="192.168.x.x" pattern="\d{1,3}(\.\d{1,3}){3}" title="Ingrese una dirección IP válida, por ejemplo: 192.168.1.100" required>
+                            </div>
+                            <!-- Campo opcional para el puerto de la cámara -->
+                            <div class="form-group">
+                                <label for="cameraPort">Puerto de la Cámara (Opcional, predeterminado: 8080)</label>
+                                <input type="number" class="form-control" id="cameraPort" name="camera_port" placeholder="8080" min="1" max="65535">
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-block">Iniciar Escaneo</button>
+                        </form>
+
+                        <hr class="bg-light">
+
+                        <!-- Botón para Detener Escaneo -->
+                        <button id="detenerEscaneoBtn" class="btn btn-warning btn-block">Detener Escaneo</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts JavaScript -->
+    <script>
+        $(document).ready(function() {
+            // Elemento de imagen para el flujo
+            const videoElement = $('#videoFeed');
+            const cameraStatus = $('#cameraStatus');
+            const videoError = $('#videoError');
+
+            // Función para manejar la carga del archivo UDI
+            $('#cargarUdiForm').on('submit', function(e) {
+                e.preventDefault();
+                let archivo = $('#udiFile')[0].files[0];
+                if(!archivo) {
+                    alert("Por favor, selecciona un archivo UDI para cargar.");
+                    return;
+                }
+
+                let formData = new FormData();
+                formData.append('udi_file', archivo);
+
+                // Mostrar spinner de carga
+                $('#resultadosUDI').html(`
+                    <div class="d-flex align-items-center">
+                        <strong>Cargando y analizando...</strong>
+                        <div class="spinner-border ml-auto" role="status" aria-hidden="true"></div>
+                    </div>
+                `);
+
+                $.ajax({
+                    url: '/cargar_udi',
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function(data) {
+                        // Mostrar los resultados del UDI en la barra lateral
+                        $('#resultadosUDI').html(`
+                            <p><strong>Decodabilidad:</strong> ${data.resultados.Decodabilidad}</p>
+                            <p><strong>Contraste:</strong> ${data.resultados.Contraste}%</p>
+                            <p><strong>Modulación:</strong> ${data.resultados.Modulacion}/10</p>
+                            <p><strong>Axial Nonuniformity:</strong> ${data.resultados['Axial Nonuniformity']}%</p>
+                            <p><strong>Grid Nonuniformity:</strong> ${data.resultados['Grid Nonuniformity']}%</p>
+                            <p><strong>Grado General:</strong> ${data.resultados['Grado General']}/10</p>
+                            <p><strong>OCR Detectado:</strong></p>
+                            <div class="ocr-results">
+                                ${data.resultados.OCR.length > 0 ? data.resultados.OCR.map(text => `<p>${text}</p>`).join('') : '<p>No se detectó texto.</p>'}
+                            </div>
+                        `);
+                        alert(data.message);
+                    },
+                    error: function(response) {
+                        $('#resultadosUDI').html('<p>No se han cargado resultados.</p>');
+                        if (response.responseJSON && response.responseJSON.error) {
+                            alert(response.responseJSON.error);
+                        } else {
+                            alert("Error al cargar el UDI.");
+                        }
+                    }
+                });
+            });
+
+            // Variable para controlar el estado del escaneo
+            let escaneando = false;
+            let intervaloActualizacion;
+
+            // Función para manejar el inicio del escaneo
+            $('#iniciarEscaneoForm').on('submit', function(e) {
+                e.preventDefault();
+                let ip = $('#cameraIp').val().trim();
+                let port = $('#cameraPort').val().trim();
+
+                // Validar la dirección IP
+                if(ip === "") {
+                    alert("Por favor, ingresa una dirección IP válida.");
+                    return;
+                }
+
+                // Validar el puerto si se proporciona
+                if(port !== "") {
+                    port = parseInt(port);
+                    if(isNaN(port) || port < 1 || port > 65535) {
+                        alert("Por favor, ingresa un puerto válido (1-65535) o déjalo vacío para usar el predeterminado (8080).");
+                        return;
+                    }
+                } else {
+                    port = 8080; // Puerto predeterminado
+                }
+
+                // Mostrar spinner de inicio de escaneo
+                $('#resultadosCamara').html(`
+                    <div class="d-flex align-items-center">
+                        <strong>Iniciando escaneo...</strong>
+                        <div class="spinner-border ml-auto" role="status" aria-hidden="true"></div>
+                    </div>
+                `);
+
+                $.ajax({
+                    url: '/iniciar_escaneo',
+                    type: 'POST',
+                    data: { camera_ip: ip, camera_port: port },
+                    success: function(data) {
+                        alert(data.message);
+                        // Iniciar la transmisión de video
+                        iniciarVideoStream();
+                        // Actualizar estado de la cámara
+                        cameraStatus.html(`<span class="badge badge-success">Cámara Activa</span>`);
+                        // Resetear los resultados de la cámara
+                        $('#resultadosCamara').html('<p>Escaneando...</p>');
+                        iniciarActualizacionResultados();
+                        escaneando = true;
+                    },
+                    error: function(xhr) {
+                        $('#resultadosCamara').html('<p>No se han capturado resultados.</p>');
+                        if (xhr.responseJSON && xhr.responseJSON.error) {
+                            alert('Error al iniciar el escaneo: ' + xhr.responseJSON.error);
+                        } else {
+                            alert('Error al iniciar el escaneo.');
+                        }
+                    }
+                });
+            });
+
+            // Función para manejar la detención del escaneo
+            $('#detenerEscaneoBtn').on('click', function() {
+                if(!escaneando) {
+                    alert("No hay escaneo en curso.");
+                    return;
+                }
+                $.ajax({
+                    url: '/detener_escaneo',
+                    type: 'POST',
+                    success: function(data) {
+                        // Detener la transmisión de video
+                        detenerVideoStream();
+                        // Resetear los resultados de la cámara y comparación
+                        $('#resultadosCamara').html('<p>No se han capturado resultados.</p>');
+                        $('#comparacionResultados').html('<p>No hay datos de comparación.</p>');
+                        // Actualizar estado de la cámara
+                        cameraStatus.html(`<span class="badge badge-secondary">Cámara Detenida</span>`);
+                        alert(data.message);
+                        detenerActualizacionResultados();
+                        escaneando = false;
+                    },
+                    error: function(xhr) {
+                        if (xhr.responseJSON && xhr.responseJSON.error) {
+                            alert('Error al detener el escaneo: ' + xhr.responseJSON.error);
+                        } else {
+                            alert('Error al detener el escaneo.');
+                        }
+                    }
+                });
+            });
+
+            // Función para iniciar el flujo de video
+            function iniciarVideoStream() {
+                // Obtener la dirección actual del servidor
+                const protocol = window.location.protocol;
+                const host = window.location.host;
+                const videoUrl = `${protocol}//${host}/video_feed`;
+
+                // Configurar el elemento de imagen
+                videoElement.attr('src', videoUrl);
+
+                // Manejo de errores y carga del video
+                videoElement.on('load', function() {
+                    videoError.hide();
+                    cameraStatus.html(`<span class="badge badge-success">Cámara Activa</span>`);
+                });
+                videoElement.on('error', function() {
+                    videoError.show();
+                    cameraStatus.html(`<span class="badge badge-danger">Error en la Cámara</span>`);
+                });
+            }
+
+            // Función para detener el flujo de video
+            function detenerVideoStream() {
+                videoElement.attr('src', "");
+                videoError.hide();
+            }
+
+            // Función para actualizar los resultados de la cámara
+            function actualizarResultadosCamara() {
+                $.ajax({
+                    url: '/obtener_resultados_camara',
+                    type: 'GET',
+                    success: function(data) {
+                        if (data.resultados) {
+                            let resultados = data.resultados;
+                            let ocrText = resultados.OCR.length > 0 ? resultados.OCR.join(', ') : 'No se detectó texto.';
+
+                            $('#resultadosCamara').html(`
+                                <p><strong>Decodabilidad:</strong> ${resultados.Decodabilidad}</p>
+                                <p><strong>Contraste:</strong> ${resultados.Contraste}%</p>
+                                <p><strong>Modulación:</strong> ${resultados.Modulacion}/10</p>
+                                <p><strong>Axial Nonuniformity:</strong> ${resultados['Axial Nonuniformity']}%</p>
+                                <p><strong>Grid Nonuniformity:</strong> ${resultados['Grid Nonuniformity']}%</p>
+                                <p><strong>Grado General:</strong> ${resultados['Grado General']}/10</p>
+                                <p><strong>OCR Detectado:</strong></p>
+                                <div class="ocr-results">
+                                    ${resultados.OCR.length > 0 ? resultados.OCR.map(text => `<p>${text}</p>`).join('') : '<p>No se detectó texto.</p>'}
+                                </div>
+                            `);
+                        } else {
+                            $('#resultadosCamara').html('<p>No se han capturado resultados.</p>');
+                        }
+                    },
+                    error: function(response) {
+                        console.error("Error al obtener resultados de la cámara:", response);
+                    }
+                });
+            }
+
+            // Función para actualizar la comparación de resultados
+            $('#compararResultadosBtn').on('click', function() {
+                $.ajax({
+                    url: '/comparar_resultados',
+                    type: 'GET',
+                    success: function(data) {
+                        if (data.comparacion) {
+                            let comparacion = data.comparacion;
+                            let html = '';
+
+                            for (let key in comparacion) {
+                                let status = comparacion[key] ? '<span class="text-success">OK</span>' : '<span class="text-danger">FALLO</span>';
+                                html += `<p><strong>${key}:</strong> ${status}</p>`;
+                            }
+
+                            $('#comparacionResultados').html(html);
+                        } else if (data.error) {
+                            $('#comparacionResultados').html(`<p>${data.error}</p>`);
+                        } else {
+                            $('#comparacionResultados').html('<p>No hay datos de comparación.</p>');
+                        }
+                    },
+                    error: function(response) {
+                        console.error("Error al obtener comparación:", response);
+                        $('#comparacionResultados').html('<p>Error al obtener la comparación.</p>');
+                    }
+                });
+            });
+
+            // Intervalo para actualizar los resultados de la cámara cada 5 segundos
+            function iniciarActualizacionResultados() {
+                intervaloActualizacion = setInterval(actualizarResultadosCamara, 5000);
+            }
+            function detenerActualizacionResultados() {
+                clearInterval(intervaloActualizacion);
+            }
+
+            // Manejo de errores de carga del video
+            videoElement.on('error', function() {
+                videoError.show();
+                cameraStatus.html(`<span class="badge badge-danger">Error en la Cámara</span>`);
+            });
+            videoElement.on('load', function() {
+                videoError.hide();
+                cameraStatus.html(`<span class="badge badge-success">Cámara Activa</span>`);
+            });
+        });
+    </script>
+</body>
+</html>
