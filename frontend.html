@@ -5,7 +5,7 @@
     <!-- Metadatos -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MecaVision - Sistema de OCR y Calidad de Imagen</title>
+    <title>MecaVision - Sistema de Decodificación y OCR</title>
 
     <!-- Bootstrap CSS -->
     <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
@@ -113,7 +113,7 @@
 
     <!-- Contenido Principal -->
     <div id="main-content" class="container mt-5">
-        <h2 class="text-center mb-4">MecaVision - Sistema de OCR y Calidad de Imagen</h2>
+        <h2 class="text-center mb-4">MecaVision - Sistema de Decodificación y OCR</h2>
 
         <div class="row">
             <!-- Sección de Video -->
@@ -210,12 +210,9 @@
                     success: function(data) {
                         // Mostrar los resultados del UDI en la barra lateral
                         $('#resultadosUDI').html(`
-                            <p><strong>Decodabilidad:</strong> ${data.resultados.Decodabilidad}</p>
-                            <p><strong>Contraste:</strong> ${data.resultados.Contraste}%</p>
-                            <p><strong>Modulación:</strong> ${data.resultados.Modulacion}/10</p>
-                            <p><strong>Axial Nonuniformity:</strong> ${data.resultados['Axial Nonuniformity']}%</p>
-                            <p><strong>Grid Nonuniformity:</strong> ${data.resultados['Grid Nonuniformity']}%</p>
-                            <p><strong>Grado General:</strong> ${data.resultados['Grado General']}/10</p>
+                            <p><strong>Decodabilidad:</strong> ${data.resultados.Decodability}</p>
+                            <p><strong>QR Data:</strong> ${data.resultados.QR_Data.length > 0 ? data.resultados.QR_Data.join(', ') : 'No se detectó QR.'}</p>
+                            <p><strong>DataMatrix Data:</strong> ${data.resultados.DM_Data.length > 0 ? data.resultados.DM_Data.join(', ') : 'No se detectó DataMatrix.'}</p>
                             <p><strong>OCR Detectado:</strong></p>
                             <div class="ocr-results">
                                 ${data.resultados.OCR.length > 0 ? data.resultados.OCR.map(text => `<p>${text}</p>`).join('') : '<p>No se detectó texto.</p>'}
@@ -364,12 +361,9 @@
                             let ocrText = resultados.OCR.length > 0 ? resultados.OCR.join(', ') : 'No se detectó texto.';
 
                             $('#resultadosCamara').html(`
-                                <p><strong>Decodabilidad:</strong> ${resultados.Decodabilidad}</p>
-                                <p><strong>Contraste:</strong> ${resultados.Contraste}%</p>
-                                <p><strong>Modulación:</strong> ${resultados.Modulacion}/10</p>
-                                <p><strong>Axial Nonuniformity:</strong> ${resultados['Axial Nonuniformity']}%</p>
-                                <p><strong>Grid Nonuniformity:</strong> ${resultados['Grid Nonuniformity']}%</p>
-                                <p><strong>Grado General:</strong> ${resultados['Grado General']}/10</p>
+                                <p><strong>Decodabilidad:</strong> ${resultados.Decodability}</p>
+                                <p><strong>QR Data:</strong> ${resultados.QR_Data.length > 0 ? resultados.QR_Data.join(', ') : 'No se detectó QR.'}</p>
+                                <p><strong>DataMatrix Data:</strong> ${resultados.DM_Data.length > 0 ? resultados.DM_Data.join(', ') : 'No se detectó DataMatrix.'}</p>
                                 <p><strong>OCR Detectado:</strong></p>
                                 <div class="ocr-results">
                                     ${resultados.OCR.length > 0 ? resultados.OCR.map(text => `<p>${text}</p>`).join('') : '<p>No se detectó texto.</p>'}

@@ -1,5 +1,3 @@
-# mecavision.py
-
 import cv2
 import numpy as np
 from flask import Flask, render_template, Response, jsonify, request
@@ -49,82 +47,30 @@ cap = None
 last_ocr_time = 0
 OCR_INTERVAL = 2  # Realizar OCR cada 2 segundos
 
-def calcular_contraste(image):
-    """Calcular el contraste de la imagen."""
+def preprocesar_imagen(image):
+    """Preprocesar la imagen para mejorar la detección de códigos."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    contraste = np.std(gray)
-    return round(contraste / 255 * 100, 2)
-
-def calcular_modulacion(image):
-    """Calcular la modulación (claridad de los bordes) de la imagen."""
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 100, 200)
-    mod_value = np.mean(edges)
-    return round(mod_value / 255 * 10, 2)
-
-def calcular_no_uniformidad(image):
-    """Calcular la no uniformidad axial y de cuadrícula de la imagen."""
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 50, 150)
-    grid_nonuniformity = np.std(edges) / 255 * 100
-    axial_nonuniformity = np.mean(np.abs(np.gradient(edges))) / 255 * 100
-    return round(axial_nonuniformity, 2), round(grid_nonuniformity, 2)
-
-def evaluar_calidad(frame, realizar_ocr=False):
-    """Evaluar la calidad de un frame del video."""
-    # Calcular contraste
-    contraste = calcular_contraste(frame)
-
-    # Calcular modulación
-    modulacion = calcular_modulacion(frame)
-
-    # Calcular no uniformidad
-    axial_nonuniformity, grid_nonuniformity = calcular_no_uniformidad(frame)
-
-    # Calcular el grado total (peso de cada parámetro)
-    grado_total = round((contraste * 0.4 + modulacion * 0.3 + axial_nonuniformity * 0.15 + grid_nonuniformity * 0.15) / 10, 2)
-
-    # Realizar OCR si es necesario
-    ocr_text = []
-    if realizar_ocr:
-        # Realizar OCR en todo el frame para capturar todo el texto presente
-        ocr_results = ocr_reader.readtext(frame, detail=0, paragraph=True)
-        ocr_text = [texto.lower() for texto in ocr_results]
-
-    # Retornar los resultados
-    return {
-        "Contrast": contraste,
-        "Modulation": modulacion,
-        "Axial Nonuniformity": axial_nonuniformity,
-        "Grid Nonuniformity": grid_nonuniformity,
-        "Grade": grado_total,
-        "OCR": ocr_text
-    }
+    # Equalización del histograma para mejorar el contraste
+    equalized = cv2.equalizeHist(gray)
+    blurred = cv2.GaussianBlur(equalized, (3, 3), 0)
+    return blurred
 
 def verificar_decodabilidad(image):
     """Verificar la decodabilidad de códigos QR y DataMatrix en la imagen."""
     # Decodificar códigos QR usando pyzbar
     qr_codes = decode_barcode(image)
+    qr_data = [code.data.decode('utf-8') for code in qr_codes]
 
     # Decodificar códigos DataMatrix usando pylibdmtx
     datamatrix_codes = decode_datamatrix(image, timeout=1000, max_count=10)
+    dm_data = [code.data.decode('utf-8') for code in datamatrix_codes]
 
     decodability = "PASS" if len(qr_codes) > 0 or len(datamatrix_codes) > 0 else "FAIL"
-    return decodability, qr_codes, datamatrix_codes
+    return decodability, qr_codes, datamatrix_codes, qr_data, dm_data
 
-def preprocesar_imagen(image):
-    """Preprocesar la imagen para mejorar la detección de DataMatrix."""
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # Equalización del histograma para mejorar el contraste
-    equalized = cv2.equalizeHist(gray)
-    blurred = cv2.GaussianBlur(equalized, (5, 5), 0)
-    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    return thresh
-
-def mostrar_resultados_en_frame(frame, resultados, qr_codes, datamatrix_codes, ocr_text, bounding_box=None):
+def mostrar_resultados_en_frame(frame, resultados, qr_codes, datamatrix_codes):
     """Superponer resultados y detecciones en el frame."""
     font = cv2.FONT_HERSHEY_SIMPLEX
-    # Ajustar colores para mejor legibilidad
     color_texto = (255, 255, 255)  # Blanco para texto
     color_fondo = (0, 0, 0)        # Negro semitransparente para fondo del texto
     thickness = 2
@@ -145,22 +91,11 @@ def mostrar_resultados_en_frame(frame, resultados, qr_codes, datamatrix_codes, o
             x, y, w, h = rect.left, rect.top, rect.width, rect.height
             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
 
-    # Dibujar un rectángulo alrededor del bounding_box si se proporciona
-    if bounding_box:
-        x, y, w, h = bounding_box
-        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 255), 2)  # Amarillo
-
-    # Superponer los resultados del análisis de calidad con fondo semitransparente
+    # Superponer los resultados del análisis de decodabilidad
     if resultados:
         texto_lista = [
             f"Decodabilidad: {resultados.get('Decodability', 'N/A')}",
-            f"Contraste: {resultados.get('Contrast', 'N/A')}%",
-            f"Modulación: {resultados.get('Modulation', 'N/A')}/10",
-            f"Axial Nonuniformity: {resultados.get('Axial Nonuniformity', 'N/A')}%",
-            f"Grid Nonuniformity: {resultados.get('Grid Nonuniformity', 'N/A')}%",
-            f"Grado General: {resultados.get('Grade', 'N/A')}/10"
         ]
-
         for i, line in enumerate(texto_lista):
             y_position = 30 + i * 30
             # Dibujar fondo semitransparente
@@ -169,19 +104,7 @@ def mostrar_resultados_en_frame(frame, resultados, qr_codes, datamatrix_codes, o
             # Dibujar texto
             cv2.putText(frame, line, (15, y_position), font, 0.6, color_texto, thickness)
 
-    # Mostrar el texto detectado por OCR (si lo hay) con fondo semitransparente
-    if ocr_text:
-        for i, line in enumerate(ocr_text):
-            y_position = 210 + i * 30
-            # Evitar que el texto se salga del frame
-            if y_position > frame.shape[0] - 10:
-                break
-            # Dibujar fondo semitransparente
-            ocr_line = f"OCR Texto {i+1}: {line}"
-            (text_width, text_height), _ = cv2.getTextSize(ocr_line, font, 0.6, thickness)
-            cv2.rectangle(frame, (10, y_position - text_height - 10), (10 + text_width + 10, y_position + 5), color_fondo, -1)
-            # Dibujar texto
-            cv2.putText(frame, ocr_line, (15, y_position), font, 0.6, color_texto, thickness)
+    return frame
 
 def procesar_frames():
     """Procesar frames desde la cola de captura y ponerlos en la cola de procesados."""
@@ -195,22 +118,6 @@ def procesar_frames():
 
         start_time = time.time()  # Inicio del procesamiento
 
-        # Verificar el número de canales y convertir si es necesario
-        if len(frame.shape) == 2:
-            # Frame en escala de grises, convertir a BGR
-            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-            logging.info("Frame convertido de escala de grises a BGR.")
-        elif len(frame.shape) == 3 and frame.shape[2] == 1:
-            # Frame con un solo canal en un array 3D, convertir a BGR
-            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-            logging.info("Frame con un canal convertido a BGR.")
-        elif len(frame.shape) == 3 and frame.shape[2] == 3:
-            # Frame ya está en BGR
-            pass
-        else:
-            logging.error(f"Frame en formato inesperado: {frame.shape}")
-            continue  # Saltar frames con formatos inesperados
-
         # Preprocesar la imagen
         preprocesada = preprocesar_imagen(frame)
 
@@ -222,27 +129,30 @@ def procesar_frames():
             realizar_ocr = True
             last_ocr_time = current_time
 
-        # Evaluar calidad del frame original
-        resultados = evaluar_calidad(frame, realizar_ocr=realizar_ocr)
-
         # Verificar decodabilidad usando la imagen preprocesada
-        decodability, qr_codes, datamatrix_codes = verificar_decodabilidad(preprocesada)
-        resultados['Decodability'] = decodability
+        decodability, qr_codes, datamatrix_codes, qr_data, dm_data = verificar_decodabilidad(preprocesada)
+        resultados = {
+            'Decodability': decodability,
+            'QR_Data': qr_data,
+            'DM_Data': dm_data,
+            'OCR': []
+        }
 
-        logging.info(f"Procesando frame: Decodabilidad={resultados['Decodability']}, Contraste={resultados['Contrast']}%, Modulación={resultados['Modulation']}/10")
+        # Realizar OCR si es necesario
+        if realizar_ocr:
+            ocr_results = ocr_reader.readtext(frame, detail=0, paragraph=True)
+            resultados['OCR'] = [texto.lower() for texto in ocr_results]
+
+        logging.info(f"Procesando frame: Decodabilidad={resultados['Decodability']}")
 
         # Actualizar resultados_camara
         resultados_camara = resultados
 
         # Superponer los resultados en el frame
-        mostrar_resultados_en_frame(frame, resultados, qr_codes, datamatrix_codes, resultados.get('OCR', []), bounding_box=None)
+        frame = mostrar_resultados_en_frame(frame, resultados, qr_codes, datamatrix_codes)
 
-        # Verificar que el frame está en BGR de 3 canales antes de ponerlo en la cola
-        if len(frame.shape) == 3 and frame.shape[2] == 3:
-            # Poner el frame procesado en la cola de procesados para la transmisión (bloqueante)
-            processed_queue.put(frame)
-        else:
-            logging.warning("Frame procesado no está en formato BGR de 3 canales. No se agrega a la cola.")
+        # Poner el frame procesado en la cola de procesados para la transmisión
+        processed_queue.put(frame)
 
         end_time = time.time()  # Fin del procesamiento
         processing_time = end_time - start_time
@@ -318,20 +228,16 @@ def video_feed():
                 # Intentar obtener el frame procesado más reciente
                 frame = processed_queue.get(timeout=1)
 
-                # Verificar que el frame esté en el formato correcto (BGR)
-                if len(frame.shape) == 3 and frame.shape[2] == 3:
-                    # Codificar el frame a JPEG con calidad reducida
-                    ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])  # Calidad al 70%
-                    if not ret:
-                        logging.warning("No se pudo codificar el frame.")
-                        continue
-                    frame_bytes = buffer.tobytes()
+                # Codificar el frame a JPEG con calidad reducida
+                ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])  # Calidad al 70%
+                if not ret:
+                    logging.warning("No se pudo codificar el frame.")
+                    continue
+                frame_bytes = buffer.tobytes()
 
-                    # Enviar el frame al frontend
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-                else:
-                    logging.warning("Frame no está en formato BGR de 3 canales.")
+                # Enviar el frame al frontend
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
             except Empty:
                 continue
             except Exception as e:
@@ -363,15 +269,20 @@ def cargar_udi():
     # Reducir la resolución del UDI para mejorar el rendimiento
     image = cv2.resize(image, (RESIZE_WIDTH, int(image.shape[0] * RESIZE_WIDTH / image.shape[1])))
 
-    # Evaluar calidad del archivo UDI cargado y realizar OCR
-    resultados = evaluar_calidad(image, realizar_ocr=True)
+    # Realizar OCR en el UDI
+    ocr_results = ocr_reader.readtext(image, detail=0, paragraph=True)
+    ocr_text = [texto.lower() for texto in ocr_results]
 
-    # Verificar decodabilidad en el UDI
+    # Decodificar códigos en el UDI
     preprocesada = preprocesar_imagen(image)
-    decodability, qr_codes, datamatrix_codes = verificar_decodabilidad(preprocesada)
-    resultados['Decodability'] = decodability
+    decodability, qr_codes, datamatrix_codes, qr_data, dm_data = verificar_decodabilidad(preprocesada)
 
-    resultados['OCR'] = resultados.get('OCR', [])  # Asegurarse de que OCR está en los resultados
+    resultados = {
+        'Decodability': decodability,
+        'QR_Data': qr_data,
+        'DM_Data': dm_data,
+        'OCR': ocr_text
+    }
 
     logging.info("UDI cargado y procesado exitosamente.")
 
@@ -492,13 +403,15 @@ def obtener_comparacion():
             # Comparar Decodabilidad
             comparacion_resultados['Decodabilidad'] = resultados_udi.get('Decodability') == resultados_camara.get('Decodability')
 
-            # Comparar Contraste
-            contraste_diff = abs(resultados_udi.get('Contrast', 0) - resultados_camara.get('Contrast', 0))
-            comparacion_resultados['Contraste'] = contraste_diff <= 10  # Permitir una diferencia de 10%
+            # Comparar QR_Data
+            udi_qr = ' '.join(resultados_udi.get('QR_Data', []))
+            cam_qr = ' '.join(resultados_camara.get('QR_Data', []))
+            comparacion_resultados['QR_Data'] = udi_qr == cam_qr
 
-            # Comparar Modulación
-            modulacion_diff = abs(resultados_udi.get('Modulation', 0) - resultados_camara.get('Modulation', 0))
-            comparacion_resultados['Modulación'] = modulacion_diff <= 1  # Permitir una diferencia de 1
+            # Comparar DM_Data
+            udi_dm = ' '.join(resultados_udi.get('DM_Data', []))
+            cam_dm = ' '.join(resultados_camara.get('DM_Data', []))
+            comparacion_resultados['DM_Data'] = udi_dm == cam_dm
 
             # Comparar OCR usando distancia de Levenshtein
             udi_ocr = ' '.join(resultados_udi.get('OCR', []))
